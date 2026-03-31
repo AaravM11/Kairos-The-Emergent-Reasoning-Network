@@ -1,10 +1,10 @@
 import os
 import sys
-
-import openai
+from typing import Any, Optional
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from core.openai_model import default_chat_model
+from core.llm_client import chat_completion, llm_ready
+from validation_nodes.validator_llm_parse import parse_score_0_1, parse_bool_after_keyword, parse_feedback_after_keyword
 
 # === Optional: Story Protocol Integration ===
 def register_to_story(reasoning_output):
@@ -17,8 +17,15 @@ def register_to_story(reasoning_output):
     }
 
 # === Novelty VN with Story Protocol + EigenLayer compatibility ===
-def run_novelty_vn(reasoning_output, kg, openai_key, story_threshold=0.85):
-    openai.api_key = openai_key
+def run_novelty_vn(reasoning_output: Any, kg: Any, openai_key: Optional[str], story_threshold: float = 0.85):
+    if not llm_ready(openai_key):
+        return {
+            "vn_type": "NoveltyVN",
+            "valid": False,
+            "score": 0.0,
+            "feedback": "Skipped: set OPENAI_API_KEY or LLM_PROVIDER=ollama with Ollama running.",
+            "story_protocol": None,
+        }
 
     # --- Step 1: Extract KG facts as text
     kg_text = "\n".join(
@@ -52,27 +59,21 @@ Score: <0-1>
 Feedback: <short explanation>
 """
 
-    response = openai.ChatCompletion.create(
-        model=default_chat_model(),
-        messages=[{"role": "user", "content": prompt}],
-    )
+    content = chat_completion([{"role": "user", "content": prompt}], openai_key=openai_key)
 
-    content = response["choices"][0]["message"]["content"]
-
-    # --- Step 3: Parse LLM output
-    try:
-        novel = "true" in content.lower().split("novel:")[1].split("\n")[0].strip()
-        score = float(content.lower().split("score:")[1].split("\n")[0].strip())
-        feedback = content.split("Feedback:")[1].strip()
-    except Exception as e:
-        print("Failed to parse NoveltyVN output:", e)
+    nb = parse_bool_after_keyword(content, "novel")
+    score = parse_score_0_1(content)
+    feedback = parse_feedback_after_keyword(content)
+    if score is None:
+        print("Failed to parse NoveltyVN score from:", content[:200])
         return {
             "vn_type": "NoveltyVN",
             "valid": False,
             "score": 0.0,
-            "feedback": "Could not parse validator response.",
-            "story_protocol": None
+            "feedback": "Could not parse validator score from LLM output.",
+            "story_protocol": None,
         }
+    novel = nb if nb is not None else (score >= 0.7)
 
     result = {
         "vn_type": "NoveltyVN",
