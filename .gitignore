@@ -86,6 +86,7 @@ next-env.d.ts
 
 # Runtime / local agent registry (created by orchestrator)
 output/agent_memory_registry.json
+output/kairos_rounds_index.json
 
 # Misc
 .DS_Store

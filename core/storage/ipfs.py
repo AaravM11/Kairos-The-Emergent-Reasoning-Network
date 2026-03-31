@@ -132,14 +132,57 @@ def fetch_json_from_ipfs(cid: str) -> Dict[str, Any]:
 
 def persist_cid_to_filecoin(cid: str) -> Dict[str, Any]:
     """
-    Optional Filecoin / deal tracking hook. Extend with Lighthouse, Boost APIs, etc.
+    Describe how this CID is persisted and how to reopen it.
+
+    Real Filecoin deals are not made from this stub; we encode the *lane* you are on:
+    - web3.storage uploads are Filecoin-backed on their side.
+    - Kubo is a local pin (durable only while your node pins / replicates).
+    - Fake IPFS is in-memory for tests.
     """
+    gateway = f"{_ipfs_gateway_base().rstrip('/')}/{cid}"
+    backend = _storage_backend()
     provider = os.environ.get("FILECOIN_PROVIDER", "none").strip()
-    if provider == "none" or not provider:
-        return {"cid": cid, "status": "not_implemented", "provider": "none"}
+
+    if _use_fake_ipfs():
+        return {
+            "cid": cid,
+            "status": "simulated",
+            "persistence": "in_process_only",
+            "gateway_url": gateway,
+            "note": "KAIROS_FAKE_IPFS: CIDs are not on the public network.",
+        }
+
+    if backend in ("web3storage", "w3storage", "nftstorage"):
+        return {
+            "cid": cid,
+            "status": "filecoin_backed_pin",
+            "persistence": "web3_storage_to_filecoin",
+            "provider": "web3.storage",
+            "gateway_url": gateway,
+            "note": (
+                "Uploaded via web3.storage; content is addressed on IPFS and replicated to "
+                "Filecoin per their service (no direct deal API in this repo)."
+            ),
+        }
+
+    if provider and provider.lower() != "none":
+        return {
+            "cid": cid,
+            "status": "delegated",
+            "persistence": "custom_provider",
+            "provider": provider,
+            "gateway_url": gateway,
+            "note": "FILECOIN_PROVIDER set; wire a real deal client (Lighthouse, Boost, etc.) to complete storage deals.",
+        }
+
     return {
         "cid": cid,
-        "status": "delegated",
-        "provider": provider,
-        "note": "Configure FILECOIN_PROVIDER and a real deal client to persist CIDs on Filecoin.",
+        "status": "local_ipfs_pin",
+        "persistence": "kubo_pin",
+        "provider": "kubo",
+        "gateway_url": gateway,
+        "note": (
+            "Pinned on your local IPFS node. For Filecoin-backed durability without running "
+            "deals yourself, set STORAGE_BACKEND=web3storage and WEB3_STORAGE_TOKEN."
+        ),
     }

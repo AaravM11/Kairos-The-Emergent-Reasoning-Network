@@ -364,6 +364,24 @@ def orchestrate(
         except OSError:
             pass
 
+        try:
+            from core.storage.round_archive import append_marketplace_round
+
+            append_marketplace_round(
+                {
+                    "archived_at": datetime.now(timezone.utc).isoformat(),
+                    "query": query,
+                    "winner": winner,
+                    "winner_answer": winner_entry["output"].get("answer", ""),
+                    "knowledge_graph_cid": kg_cid,
+                    "reasoning_round_cid": round_cid,
+                    "agent_memory_registry_cid": registry_checkpoint_cid,
+                    "reasoning_round_filecoin": round_filecoin,
+                }
+            )
+        except Exception:
+            pass
+
         return {
             "reasoning": winner_entry["output"],
             "validation": winner_entry["validation"],

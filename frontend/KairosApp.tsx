@@ -1,4 +1,4 @@
-import React, { useState, ChangeEvent, useRef } from "react";
+import React, { useState, useEffect, ChangeEvent, useRef } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -15,6 +15,7 @@ import {
   Shield,
   ExternalLink,
   AlertCircle,
+  History,
 } from "lucide-react";
 
 const IPFS_GATEWAY: string = "https://ipfs.io/ipfs";
@@ -47,8 +48,21 @@ interface ApiResponse {
   knowledge_graph_cid?: string;
   agent_memory_cids?: Record<string, string>;
   agent_memory_registry_cid?: string;
+  reasoning_round_filecoin?: Record<string, unknown>;
   swarm?: string[];
   error?: string;
+}
+
+interface ArchiveRoundRow {
+  archived_at?: string;
+  query?: string;
+  winner?: string;
+  winner_answer?: string;
+  knowledge_graph_cid?: string;
+  reasoning_round_cid?: string;
+  agent_memory_registry_cid?: string;
+  reasoning_round_filecoin?: Record<string, unknown>;
+  storage_backend?: string;
 }
 
 interface StoryResponse {
@@ -74,6 +88,49 @@ export default function KairosFrontend(): React.ReactElement {
   const [loading, setLoading] = useState<boolean>(false);
   const [openaiKey, setOpenaiKey] = useState<string>("");
   const [alignmentPreferences, setAlignmentPreferences] = useState<string>("");
+  const [archiveRounds, setArchiveRounds] = useState<ArchiveRoundRow[]>([]);
+  const [archiveLoading, setArchiveLoading] = useState<boolean>(false);
+  const [archivePreviewCid, setArchivePreviewCid] = useState<string | null>(null);
+  const [archivePreviewJson, setArchivePreviewJson] = useState<unknown>(null);
+  const [archivePreviewError, setArchivePreviewError] = useState<string | null>(null);
+
+  const loadArchiveIndex = async (): Promise<void> => {
+    setArchiveLoading(true);
+    try {
+      const res = await fetch("/api/archive");
+      const data: unknown = await res.json();
+      const rows: ArchiveRoundRow[] =
+        data !== null && typeof data === "object" && !Array.isArray(data) && "rounds" in data
+          ? ((data as { rounds: ArchiveRoundRow[] }).rounds ?? [])
+          : [];
+      setArchiveRounds(Array.isArray(rows) ? rows : []);
+    } catch {
+      setArchiveRounds([]);
+    } finally {
+      setArchiveLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadArchiveIndex();
+  }, []);
+
+  const fetchRoundFromGateway = async (cid: string): Promise<void> => {
+    setArchivePreviewCid(cid);
+    setArchivePreviewError(null);
+    setArchivePreviewJson(null);
+    try {
+      const res = await fetch(`/api/archive?cid=${encodeURIComponent(cid)}`);
+      const data: unknown = await res.json();
+      if (!res.ok && data !== null && typeof data === "object" && "error" in data) {
+        setArchivePreviewError(String((data as { error: string }).error));
+        return;
+      }
+      setArchivePreviewJson(data);
+    } catch (err: unknown) {
+      setArchivePreviewError(err instanceof Error ? err.message : String(err));
+    }
+  };
 
   const handleQuery = async (): Promise<void> => {
     setLoading(true);
@@ -104,6 +161,9 @@ export default function KairosFrontend(): React.ReactElement {
         data = { ...data, error: `HTTP ${res.status}` };
       }
       setResult(data);
+      if (!data.error) {
+        void loadArchiveIndex();
+      }
       if (data.error) {
         setTab("summary");
       }
@@ -307,6 +367,86 @@ export default function KairosFrontend(): React.ReactElement {
         </Card>
       </section>
 
+      <section className="space-y-3">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <h2 className="text-lg font-semibold flex items-center gap-2">
+            <History className="h-5 w-5" /> Pinned rounds &amp; replay
+          </h2>
+          <Button variant="outline" size="sm" type="button" onClick={() => void loadArchiveIndex()} disabled={archiveLoading}>
+            {archiveLoading ? "Refreshing…" : "Refresh list"}
+          </Button>
+        </div>
+        <Card className="border-muted">
+          <CardContent className="p-4 space-y-3 text-sm">
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              Each successful run appends a row to <code className="text-[10px]">output/kairos_rounds_index.json</code> and
+              records how the round CID is persisted (local Kubo pin vs{" "}
+              <code className="text-[10px]">web3.storage</code> / Filecoin-backed lane). Use{" "}
+              <strong className="text-foreground">Fetch round JSON</strong> to pull the same payload back through this site
+              (server-side gateway fetch).
+            </p>
+            {archiveRounds.length === 0 ? (
+              <p className="text-muted-foreground text-sm">No archived rounds yet — run a marketplace round above.</p>
+            ) : (
+              <ul className="space-y-3 border-t border-border pt-3">
+                {[...archiveRounds].reverse().map((row, idx) => {
+                  const cid: string | undefined =
+                    typeof row.reasoning_round_cid === "string" ? row.reasoning_round_cid : undefined;
+                  const fc = row.reasoning_round_filecoin;
+                  const status: string =
+                    fc !== null && typeof fc === "object" && "status" in fc ? String((fc as { status: string }).status) : "—";
+                  return (
+                    <li
+                      key={`${row.archived_at ?? ""}-${cid ?? idx}`}
+                      className="rounded-md border border-border/60 p-3 space-y-2 text-xs"
+                    >
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-medium text-foreground">{row.winner ?? "—"}</span>
+                        <span className="text-muted-foreground tabular-nums">{row.archived_at ?? ""}</span>
+                        <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase tracking-wide">{status}</span>
+                        {row.storage_backend ? (
+                          <span className="text-muted-foreground text-[10px]">backend: {row.storage_backend}</span>
+                        ) : null}
+                      </div>
+                      <p className="text-[13px] leading-snug line-clamp-2">{row.query ?? ""}</p>
+                      {cid ? (
+                        <div className="flex flex-wrap gap-2">
+                          <Button size="sm" variant="secondary" type="button" onClick={() => void fetchRoundFromGateway(cid)}>
+                            Fetch round JSON
+                          </Button>
+                          <a
+                            href={cidLink(cid) ?? "#"}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1 text-primary text-xs hover:underline"
+                          >
+                            Open gateway <ExternalLink className="h-3 w-3" />
+                          </a>
+                        </div>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+            {archivePreviewCid ? (
+              <div className="border-t border-border pt-3 space-y-2">
+                <p className="text-xs font-medium text-foreground">Preview — {archivePreviewCid}</p>
+                {archivePreviewError ? (
+                  <p className="text-xs text-destructive">{archivePreviewError}</p>
+                ) : archivePreviewJson ? (
+                  <pre className="whitespace-pre-wrap break-words text-[11px] bg-black/25 p-3 rounded-md max-h-80 overflow-y-auto">
+                    {JSON.stringify(archivePreviewJson, null, 2)}
+                  </pre>
+                ) : (
+                  <p className="text-xs text-muted-foreground">Loading…</p>
+                )}
+              </div>
+            ) : null}
+          </CardContent>
+        </Card>
+      </section>
+
       {result ? (
         <section className="space-y-3">
           <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -389,6 +529,29 @@ export default function KairosFrontend(): React.ReactElement {
                       <span className="block text-muted-foreground">—</span>
                     )}
                   </div>
+                  <div className="sm:col-span-2 lg:col-span-3 rounded-md bg-black/20 p-3 space-y-1">
+                    <span className="text-muted-foreground text-[11px] uppercase tracking-wide">Persistence lane</span>
+                    <p className="text-xs leading-relaxed">
+                      {result.reasoning_round_filecoin &&
+                      typeof result.reasoning_round_filecoin.note === "string" ? (
+                        result.reasoning_round_filecoin.note
+                      ) : (
+                        <span className="text-muted-foreground">Run completes with IPFS CIDs; persistence details follow.</span>
+                      )}
+                    </p>
+                    {result.reasoning_round_filecoin &&
+                    typeof result.reasoning_round_filecoin.gateway_url === "string" ? (
+                      <a
+                        href={result.reasoning_round_filecoin.gateway_url as string}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 text-primary text-xs hover:underline break-all"
+                      >
+                        {String(result.reasoning_round_filecoin.gateway_url)}
+                        <ExternalLink className="h-3 w-3 shrink-0" />
+                      </a>
+                    ) : null}
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -417,6 +580,7 @@ export default function KairosFrontend(): React.ReactElement {
                         winner: result?.winner,
                         winner_answer: result?.winner_answer,
                         reasoning_round_cid: result?.reasoning_round_cid,
+                        reasoning_round_filecoin: result?.reasoning_round_filecoin,
                         knowledge_graph_cid: result?.knowledge_graph_cid,
                         agent_memory_cids: result?.agent_memory_cids,
                         agent_memory_registry_cid: result?.agent_memory_registry_cid,

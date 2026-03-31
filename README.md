@@ -26,6 +26,21 @@ Copy secrets locally (never commit `.env`). Common variables:
 | `KAIROS_PYTHON` | Path to venv Python for `/api/query` (e.g. `.venv/bin/python`) |
 | `KAIROS_FAKE_IPFS` | `1` = deterministic fake CIDs (tests / no daemon) |
 | `AGENT_MEMORY_REGISTRY_PATH` | Optional override for agent memory registry file |
+| `STORAGE_BACKEND` | `kubo` (default, local IPFS API) or `web3storage` + `WEB3_STORAGE_TOKEN` (Filecoin-backed on the service side) |
+| `WEB3_STORAGE_TOKEN` | Bearer token when `STORAGE_BACKEND=web3storage` |
+| `IPFS_GATEWAY_URL` | Base URL for reads (default `https://ipfs.io/ipfs`); used by `GET /api/archive?cid=` |
+| `KAIROS_ROUNDS_INDEX_PATH` | Optional path for the local archive index (default `output/kairos_rounds_index.json`) |
+| `FILECOIN_PROVIDER` | Optional hook for a future custom deal client; surfaced in persistence metadata |
+
+## Pinned rounds (in-app replay)
+
+Every successful orchestrator run **appends** a row to `output/kairos_rounds_index.json` (gitignored) with the query, winner, CIDs, and a **`reasoning_round_filecoin`** object that explains the **persistence lane**:
+
+- **Local Kubo** — `local_ipfs_pin`: content is on your node while it pins; use **web3.storage** for provider-managed Filecoin replication.
+- **web3.storage** — `filecoin_backed_pin`: uploads go through their network (IPFS + Filecoin policy per their docs).
+- **Fake IPFS** — `simulated`: in-memory only for tests.
+
+The Next.js UI section **Pinned rounds & replay** lists those rows and can **fetch the round JSON again** via `GET /api/archive?cid=<reasoning_round_cid>` (server fetches from the configured gateway). This is the “larger implication” wired in code: **content-addressed artifacts + a local index + gateway replay**, without pretending we submit on-chain Filecoin deals from this repo.
 
 ## Quick start
 
@@ -66,7 +81,9 @@ Validator metrics include **logical consistency**, **grounding**, **novelty**, a
 | `core/orchestrator/` | Marketplace loop, validation, memory, IPFS hooks |
 | `core/knowledge_graph/` | Graph load/query (Python) |
 | `core/llm_client.py` | OpenAI vs Ollama chat completion |
-| `core/storage/ipfs.py` | IPFS upload / optional backends |
+| `core/storage/ipfs.py` | IPFS upload / optional backends, persistence metadata |
+| `core/storage/round_archive.py` | Append-only local index of pinned rounds |
+| `pages/api/archive.ts` | List archive index; proxy-fetch a CID from the gateway |
 | `reasoning_modules/` | Agent implementations |
 | `validation_nodes/` | Grounding + LLM validators |
 | `pages/api/query.ts` | Spawns Python marketplace runner |
