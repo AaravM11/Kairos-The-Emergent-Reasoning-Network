@@ -1,4 +1,5 @@
 # Minimal deps for marketplace round (orchestrator + validators + DeFi module).
 # Install: pip install -r requirements-runtime.txt
-# Legacy ChatCompletion API (used in this repo) requires openai 0.x
+# Legacy ChatCompletion API (used when LLM_PROVIDER=openai) requires openai 0.x
+# For local LLM without OpenAI billing: LLM_PROVIDER=ollama + Ollama installed (no extra pip dep)
 openai>=0.27,<1.0
