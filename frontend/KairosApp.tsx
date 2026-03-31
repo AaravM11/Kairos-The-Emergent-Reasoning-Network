@@ -60,6 +60,11 @@ function cidLink(cid: string | undefined): string | null {
   return `${IPFS_GATEWAY}/${cid}`;
 }
 
+function formatMetric(v: unknown, fractionDigits: number): string {
+  const n: number = typeof v === "number" && !Number.isNaN(v) ? v : Number(v);
+  return Number.isFinite(n) ? n.toFixed(fractionDigits) : "—";
+}
+
 export default function KairosFrontend(): React.ReactElement {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState<string>("");
@@ -271,7 +276,9 @@ export default function KairosFrontend(): React.ReactElement {
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setOpenaiKey(e.target.value)}
               />
               <p className="text-xs text-muted-foreground">
-                Only needed if you are not using a server-side key. Full scoring uses OpenAI for some modules and validators.
+                Leave empty if the server uses <code className="text-xs">OPENAI_API_KEY</code> in{" "}
+                <code className="text-xs">.env</code>, or if you set{" "}
+                <code className="text-xs">LLM_PROVIDER=ollama</code> (local Ollama; no OpenAI billing).
               </p>
             </div>
             <div className="space-y-2">
@@ -426,12 +433,25 @@ export default function KairosFrontend(): React.ReactElement {
             <TabsContent value="leaderboard" className="mt-3">
               <Card>
                 <CardContent className="p-0 overflow-x-auto">
+                  <p className="text-xs text-muted-foreground px-4 pt-3 pb-2">
+                    <strong className="text-foreground">Score</strong> = 72% validator average + 28% each module&apos;s
+                    self <code className="text-[10px]">confidence</code>, so rows differ even when Logical/Novelty/Align
+                    match. Extra fields{" "}
+                    <code className="text-[10px]">validator_average</code> /{" "}
+                    <code className="text-[10px]">module_confidence</code> are in each competition entry (Summary tab JSON).
+                  </p>
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-border text-left text-xs text-muted-foreground">
                         <th className="p-3 font-medium">#</th>
                         <th className="p-3 font-medium">Module</th>
                         <th className="p-3 font-medium">Score</th>
+                        <th className="p-3 font-medium hidden md:table-cell" title="Mean of Logical, Grounding, Novelty, Alignment">
+                          Val avg
+                        </th>
+                        <th className="p-3 font-medium hidden md:table-cell" title="Self-reported module confidence (blended into Score)">
+                          Conf
+                        </th>
                         <th className="p-3 font-medium hidden sm:table-cell">Logical</th>
                         <th className="p-3 font-medium hidden sm:table-cell">Grounding</th>
                         <th className="p-3 font-medium hidden md:table-cell">Novelty</th>
@@ -441,7 +461,7 @@ export default function KairosFrontend(): React.ReactElement {
                     <tbody>
                       {sortedCompetition.length === 0 ? (
                         <tr>
-                          <td colSpan={8} className="p-4 text-muted-foreground text-center">
+                          <td colSpan={9} className="p-4 text-muted-foreground text-center">
                             No competition data — run a round after fixing errors.
                           </td>
                         </tr>
@@ -457,18 +477,24 @@ export default function KairosFrontend(): React.ReactElement {
                           >
                             <td className="p-3 text-muted-foreground">{i + 1}</td>
                             <td className="p-3 font-medium">{row.module_name}</td>
-                            <td className="p-3 tabular-nums">{row.score?.toFixed?.(4) ?? row.score}</td>
-                            <td className="p-3 tabular-nums hidden sm:table-cell">
-                              {row.metrics?.logical_consistency?.toFixed?.(2) ?? "—"}
+                            <td className="p-3 tabular-nums">{formatMetric(row.score, 4)}</td>
+                            <td className="p-3 tabular-nums hidden md:table-cell text-muted-foreground">
+                              {formatMetric(row.metrics?.validator_average, 4)}
+                            </td>
+                            <td className="p-3 tabular-nums hidden md:table-cell text-muted-foreground">
+                              {formatMetric(row.metrics?.module_confidence, 2)}
                             </td>
                             <td className="p-3 tabular-nums hidden sm:table-cell">
-                              {row.metrics?.grounding?.toFixed?.(2) ?? "—"}
+                              {formatMetric(row.metrics?.logical_consistency, 2)}
+                            </td>
+                            <td className="p-3 tabular-nums hidden sm:table-cell">
+                              {formatMetric(row.metrics?.grounding, 2)}
                             </td>
                             <td className="p-3 tabular-nums hidden md:table-cell">
-                              {row.metrics?.novelty?.toFixed?.(2) ?? "—"}
+                              {formatMetric(row.metrics?.novelty, 2)}
                             </td>
                             <td className="p-3 tabular-nums hidden md:table-cell">
-                              {row.metrics?.alignment?.toFixed?.(2) ?? "—"}
+                              {formatMetric(row.metrics?.alignment, 2)}
                             </td>
                           </tr>
                         ))
