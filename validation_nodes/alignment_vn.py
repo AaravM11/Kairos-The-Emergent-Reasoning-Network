@@ -3,10 +3,9 @@ import os
 import sys
 from typing import Any, Dict, Optional
 
-import openai
-
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from core.openai_model import default_chat_model
+from core.llm_client import chat_completion, llm_ready
+from validation_nodes.validator_llm_parse import parse_score_0_1, parse_bool_after_keyword, parse_feedback_after_keyword
 
 DEFAULT_ALIGNMENT_PROFILE = """
 - Priority: factual, cautious analysis grounded in supplied evidence.
@@ -30,11 +29,17 @@ def get_alignment_profile_from_pin(wallet_address: str) -> str:
 
 def run_alignment_vn(
     reasoning_output: Dict[str, Any],
-    openai_key: str,
+    openai_key: Optional[str],
     wallet_address: Optional[str] = None,
     custom_profile: Optional[str] = None,
 ) -> Dict[str, Any]:
-    openai.api_key = openai_key
+    if not llm_ready(openai_key):
+        return {
+            "vn_type": "alignment",
+            "valid": False,
+            "score": 0.0,
+            "feedback": "Skipped: set OPENAI_API_KEY or LLM_PROVIDER=ollama with Ollama running.",
+        }
 
     # === Step 1: Get alignment profile
     if custom_profile and str(custom_profile).strip():
@@ -73,27 +78,20 @@ Feedback: <short explanation>
 """
 
     # === Step 4: Call LLM
-    response = openai.ChatCompletion.create(
-        model=default_chat_model(),
-        messages=[{"role": "user", "content": prompt}],
-    )
+    content = chat_completion([{"role": "user", "content": prompt}], openai_key=openai_key)
 
-    content = response["choices"][0]["message"]["content"]
-
-    # === Step 5: Parse
-    try:
-        aligned_raw = content.lower().split("aligned:")[1].split("\n")[0].strip()
-        aligned = "true" in aligned_raw
-        score = float(content.lower().split("score:")[1].split("\n")[0].strip())
-        feedback = content.split("Feedback:")[1].strip()
-    except Exception as e:
-        print("Failed to parse AlignmentVN output:", e)
+    ab = parse_bool_after_keyword(content, "aligned")
+    score = parse_score_0_1(content)
+    feedback = parse_feedback_after_keyword(content)
+    if score is None:
+        print("Failed to parse AlignmentVN score from:", content[:200])
         return {
             "vn_type": "alignment",
             "valid": False,
             "score": 0.0,
-            "feedback": "Could not parse validator response.",
+            "feedback": "Could not parse validator score from LLM output.",
         }
+    aligned = ab if ab is not None else (score >= 0.7)
 
     return {
         "vn_type": "alignment",
@@ -105,7 +103,7 @@ Feedback: <short explanation>
 
 def run_alignment_vn_from_dict(
     reasoning_output: Dict[str, Any],
-    openai_key: str,
+    openai_key: Optional[str],
     alignment_profile: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Orchestrator entrypoint: accepts optional structured profile from API."""
