@@ -1,6 +1,7 @@
 import datetime
 
 from reasoning_modules.base.module import ReasoningModule
+from reasoning_modules.kg_triple_strings import module_scoped_triples
 from reasoning_modules.memory_hints import memory_learning_hint
 
 
@@ -52,6 +53,15 @@ class MacroReasoningModule(ReasoningModule):
         if numeric_scores and sum(1 for s in numeric_scores[-5:] if s < 0.35) >= 2:
             conclusion += " Memory signal: recent scores were weak—bias toward narrower macro claims."
 
+        source_triples = module_scoped_triples(
+            knowledgeGraph,
+            "macro",
+            [
+                {"subject_type": "EconomicIndicator"},
+                {"subject_type": "MarketIndicator"},
+            ],
+        )
+
         # Return structured output with reasoning path and sources
         return {
             "subquery": subquery,
@@ -71,6 +81,7 @@ class MacroReasoningModule(ReasoningModule):
                 "past_round_count": len(memory_context.get("past_round_cids", [])),
                 "recent_performance_points": len(numeric_scores),
             },
+            "source_triples": source_triples,
         }
     
     def _synthesize_conclusion(self, reasoning_steps):
