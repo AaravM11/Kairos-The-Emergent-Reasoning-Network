@@ -1,5 +1,8 @@
-from reasoning_modules.base.module import ReasoningModule
 import datetime
+
+from reasoning_modules.base.module import ReasoningModule
+from reasoning_modules.memory_hints import memory_learning_hint
+
 
 class AuditReasoningModule(ReasoningModule):
     def __init__(self):
@@ -15,8 +18,12 @@ class AuditReasoningModule(ReasoningModule):
         vulnerability_data = knowledgeGraph.query(predicate="has_vulnerability")
         memory_context = memory_context or {}
         previous_scores = memory_context.get("performance_history", [])
-        avg_score = sum(previous_scores) / len(previous_scores) if previous_scores else 0.0
-        
+        if not isinstance(previous_scores, list):
+            previous_scores = []
+        numeric_scores = [float(s) for s in previous_scores if isinstance(s, (int, float))]
+        avg_score = sum(numeric_scores) / len(numeric_scores) if numeric_scores else 0.0
+        learning_hint = memory_learning_hint(numeric_scores)
+
         reasoning_steps = [
             {
                 "step": "Review audit history",
@@ -38,21 +45,26 @@ class AuditReasoningModule(ReasoningModule):
             }
         ]
         
+        conclusion = "Smart contract audit status indicates high risk"
+        if numeric_scores and sum(1 for s in numeric_scores[-5:] if s < 0.35) >= 2:
+            conclusion += " (elevated caution: recent validator scores for this agent were weak—double-check assumptions)."
+
         return {
             "subquery": subquery,
             "timestamp": datetime.datetime.now().isoformat(),
             "reasoningPath": reasoning_steps,
             "sources": self.sources,
-            "conclusion": "Smart contract audit status indicates high risk",
+            "conclusion": conclusion,
             "confidence": 0.78,
             "relevantMetrics": {
                 "last_audit_age": "24 months",
                 "similar_exploits": "3 in last 6 months",
                 "security_score": "low",
                 "memory_avg_score": round(avg_score, 4),
+                "memory_learning_hint": learning_hint,
             },
             "memory_context_used": {
                 "past_round_count": len(memory_context.get("past_round_cids", [])),
-                "recent_performance_points": len(previous_scores),
+                "recent_performance_points": len(numeric_scores),
             },
         }

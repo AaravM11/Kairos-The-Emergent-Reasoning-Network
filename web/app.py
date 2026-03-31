@@ -34,7 +34,8 @@ def process_query():
         query=query,
         knowledge_graph=kg,
         openai_key=openai_key,
-        run_validation=True
+        run_validation=True,
+        alignment_profile=data.get("alignment_profile"),
     )
     
     return jsonify(result)

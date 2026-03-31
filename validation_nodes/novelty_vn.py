@@ -1,4 +1,10 @@
+import os
+import sys
+
 import openai
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+from core.openai_model import default_chat_model
 
 # === Optional: Story Protocol Integration ===
 def register_to_story(reasoning_output):
@@ -47,8 +53,8 @@ Feedback: <short explanation>
 """
 
     response = openai.ChatCompletion.create(
-        model="gpt-4",
-        messages=[{"role": "user", "content": prompt}]
+        model=default_chat_model(),
+        messages=[{"role": "user", "content": prompt}],
     )
 
     content = response["choices"][0]["message"]["content"]

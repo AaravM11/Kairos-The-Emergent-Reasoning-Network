@@ -22,5 +22,14 @@ export const client = {
       txHash: "0x123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
       ipId: "123"
     };
-  }
+  },
+
+  getIPMetadata: async (ipId: string) => {
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    return {
+      ipId,
+      name: "Mock IP",
+      description: "Placeholder metadata for Story Protocol demo.",
+    };
+  },
 };

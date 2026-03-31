@@ -41,27 +41,48 @@ def main():
         run_validation=not args.no_validation
     )
     
+    if result.get("error"):
+        print(f"\nError: {result['error']}")
+        if args.output:
+            with open(args.output, "w", encoding="utf-8") as f:
+                json.dump(result, f, indent=2)
+            print(f"Partial/error result saved to {args.output}")
+        return
+
     # Display results
-    print("\n=== Reasoning Results ===")
-    print(f"Module: {result['reasoning'].get('module_used', 'unknown')}")
-    print(f"Conclusion: {result['reasoning'].get('conclusion', 'No conclusion')}")
-    
-    print("\n=== Reasoning Steps ===")
-    for step in result['reasoning'].get('reasoningPath', []):
+    print("\n=== Marketplace round ===")
+    print(f"Winner: {result.get('winner', '?')}")
+    reasoning = result.get("reasoning") or {}
+    ans = reasoning.get("answer") or reasoning.get("conclusion") or "—"
+    print(f"Winner answer: {ans}")
+    print(f"Knowledge graph CID: {result.get('knowledge_graph_cid', '—')}")
+    print(f"Reasoning round CID: {result.get('reasoning_round_cid', '—')}")
+    print(f"Registry checkpoint CID: {result.get('agent_memory_registry_cid', '—')}")
+
+    print("\n=== Leaderboard ===")
+    for row in result.get("competition", []):
+        m = row.get("metrics") or {}
+        print(
+            f"  {row.get('module_name')}: score={row.get('score')} "
+            f"(L={m.get('logical_consistency')} G={m.get('grounding')} "
+            f"N={m.get('novelty')} A={m.get('alignment')})"
+        )
+
+    print("\n=== Winner reasoning (excerpt) ===")
+    print(f"Module: {reasoning.get('module_used', 'unknown')}")
+    for step in reasoning.get("reasoning_steps", [])[:5]:
         if isinstance(step, dict):
             print(f"- {step.get('step', 'Step')}: {step.get('data', '')}")
-            print(f"  Inference: {step.get('inference', '')}")
         else:
             print(f"- {step}")
-    
-    if 'validation' in result and result['validation']:
-        print("\n=== Validation Results ===")
-        for vn_name, vn_result in result['validation'].items():
-            valid = vn_result.get('valid', False)
-            score = vn_result.get('score', 0.0)
-            status = "✅ PASSED" if valid else "❌ FAILED"
-            print(f"{vn_name}: {status} (Score: {score})")
-            print(f"  Feedback: {vn_result.get('feedback', 'No feedback')}")
+
+    if result.get("validation"):
+        print("\n=== Validation (winner) ===")
+        for vn_name, vn_result in result["validation"].items():
+            valid = vn_result.get("valid", False)
+            score = vn_result.get("score", 0.0)
+            status = "pass" if valid else "fail"
+            print(f"{vn_name}: {status} (score {score}) — {vn_result.get('feedback', '')[:120]}")
     
     # Save to file if requested
     if args.output:

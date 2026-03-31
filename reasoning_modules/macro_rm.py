@@ -1,5 +1,8 @@
-from reasoning_modules.base.module import ReasoningModule
 import datetime
+
+from reasoning_modules.base.module import ReasoningModule
+from reasoning_modules.memory_hints import memory_learning_hint
+
 
 class MacroReasoningModule(ReasoningModule):
     def __init__(self):
@@ -16,8 +19,12 @@ class MacroReasoningModule(ReasoningModule):
         market_data = knowledgeGraph.query(subject_type="MarketIndicator")
         memory_context = memory_context or {}
         previous_scores = memory_context.get("performance_history", [])
-        avg_score = sum(previous_scores) / len(previous_scores) if previous_scores else 0.0
-        
+        if not isinstance(previous_scores, list):
+            previous_scores = []
+        numeric_scores = [float(s) for s in previous_scores if isinstance(s, (int, float))]
+        avg_score = sum(numeric_scores) / len(numeric_scores) if numeric_scores else 0.0
+        learning_hint = memory_learning_hint(numeric_scores)
+
         # Structured reasoning process
         reasoning_steps = [
             {
@@ -42,7 +49,9 @@ class MacroReasoningModule(ReasoningModule):
         
         # Generate conclusion based on reasoning steps
         conclusion = self._synthesize_conclusion(reasoning_steps)
-        
+        if numeric_scores and sum(1 for s in numeric_scores[-5:] if s < 0.35) >= 2:
+            conclusion += " Memory signal: recent scores were weak—bias toward narrower macro claims."
+
         # Return structured output with reasoning path and sources
         return {
             "subquery": subquery,
@@ -56,10 +65,11 @@ class MacroReasoningModule(ReasoningModule):
                 "inflation": "3.2%",
                 "market_volatility": "high",
                 "memory_avg_score": round(avg_score, 4),
+                "memory_learning_hint": learning_hint,
             },
             "memory_context_used": {
                 "past_round_count": len(memory_context.get("past_round_cids", [])),
-                "recent_performance_points": len(previous_scores),
+                "recent_performance_points": len(numeric_scores),
             },
         }
     

@@ -1,0 +1,4 @@
+# Minimal deps for marketplace round (orchestrator + validators + DeFi module).
+# Install: pip install -r requirements-runtime.txt
+# Legacy ChatCompletion API (used in this repo) requires openai 0.x
+openai>=0.27,<1.0

@@ -1,4 +1,19 @@
+import json
+import os
+import sys
+from typing import Any, Dict, Optional
+
 import openai
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+from core.openai_model import default_chat_model
+
+DEFAULT_ALIGNMENT_PROFILE = """
+- Priority: factual, cautious analysis grounded in supplied evidence.
+- Avoid unsupported claims, extreme financial advice, and regulatory overreach.
+- Prefer transparency and clearly stated uncertainty.
+"""
+
 
 # Optional: PIN AI integration (mocked unless real SDK used)
 def get_alignment_profile_from_pin(wallet_address: str) -> str:
@@ -13,16 +28,21 @@ def get_alignment_profile_from_pin(wallet_address: str) -> str:
 """
 
 
-def run_alignment_vn(reasoning_output, openai_key, wallet_address=None, custom_profile=None):
+def run_alignment_vn(
+    reasoning_output: Dict[str, Any],
+    openai_key: str,
+    wallet_address: Optional[str] = None,
+    custom_profile: Optional[str] = None,
+) -> Dict[str, Any]:
     openai.api_key = openai_key
 
     # === Step 1: Get alignment profile
-    if custom_profile:
-        alignment_profile = custom_profile
+    if custom_profile and str(custom_profile).strip():
+        alignment_profile = str(custom_profile).strip()
     elif wallet_address:
         alignment_profile = get_alignment_profile_from_pin(wallet_address)
     else:
-        raise ValueError("Must provide either a wallet_address or custom_profile")
+        alignment_profile = DEFAULT_ALIGNMENT_PROFILE
 
     # === Step 2: Format reasoning
     reasoning = "\n".join(f"- {step}" for step in reasoning_output["reasoning_steps"])
@@ -54,29 +74,51 @@ Feedback: <short explanation>
 
     # === Step 4: Call LLM
     response = openai.ChatCompletion.create(
-        model="gpt-4",
-        messages=[{"role": "user", "content": prompt}]
+        model=default_chat_model(),
+        messages=[{"role": "user", "content": prompt}],
     )
 
     content = response["choices"][0]["message"]["content"]
 
     # === Step 5: Parse
     try:
-        aligned = "true" in content.lower().split("aligned:")[1].split("\n")[0].strip()
+        aligned_raw = content.lower().split("aligned:")[1].split("\n")[0].strip()
+        aligned = "true" in aligned_raw
         score = float(content.lower().split("score:")[1].split("\n")[0].strip())
         feedback = content.split("Feedback:")[1].strip()
     except Exception as e:
         print("Failed to parse AlignmentVN output:", e)
         return {
-            "vn_type": "AlignmentVN",
+            "vn_type": "alignment",
             "valid": False,
             "score": 0.0,
-            "feedback": "Could not parse validator response."
+            "feedback": "Could not parse validator response.",
         }
 
     return {
-        "vn_type": "AlignmentVN",
+        "vn_type": "alignment",
         "valid": aligned,
         "score": round(score, 2),
-        "feedback": feedback
+        "feedback": feedback,
     }
+
+
+def run_alignment_vn_from_dict(
+    reasoning_output: Dict[str, Any],
+    openai_key: str,
+    alignment_profile: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Orchestrator entrypoint: accepts optional structured profile from API."""
+    if not alignment_profile:
+        return run_alignment_vn(reasoning_output, openai_key)
+    if isinstance(alignment_profile, dict):
+        wallet = alignment_profile.get("wallet_address")
+        if wallet:
+            return run_alignment_vn(reasoning_output, openai_key, wallet_address=str(wallet))
+        narrative = alignment_profile.get("preferences") or alignment_profile.get("description")
+        if narrative:
+            return run_alignment_vn(reasoning_output, openai_key, custom_profile=str(narrative))
+        return run_alignment_vn(
+            reasoning_output, openai_key, custom_profile=json.dumps(alignment_profile, ensure_ascii=True)
+        )
+    return run_alignment_vn(reasoning_output, openai_key, custom_profile=str(alignment_profile))

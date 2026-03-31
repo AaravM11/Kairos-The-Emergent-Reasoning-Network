@@ -3,7 +3,10 @@ import datetime
 import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
+from core.openai_model import default_chat_model
 from reasoning_modules.base.module import ReasoningModule
+from reasoning_modules.memory_hints import memory_learning_hint
+
 
 class DeFiRiskReasoningModule(ReasoningModule):
     def __init__(self):
@@ -19,12 +22,16 @@ class DeFiRiskReasoningModule(ReasoningModule):
             raise ValueError("OpenAI API key is required for DeFi risk analysis")
         memory_context = memory_context or {}
         past_scores = memory_context.get("performance_history", [])
+        if not isinstance(past_scores, list):
+            past_scores = []
+        numeric_scores = [float(s) for s in past_scores if isinstance(s, (int, float))]
         memory_hint = (
-            f"Past performance average: {round(sum(past_scores)/len(past_scores), 4)}"
-            if past_scores
+            f"Past performance average: {round(sum(numeric_scores) / len(numeric_scores), 4)}"
+            if numeric_scores
             else "No historical performance yet"
         )
-        
+        learning_hint = memory_learning_hint(numeric_scores)
+
         openai.api_key = openai_key
 
         # Extract relevant triples from the KG
@@ -44,6 +51,9 @@ User query: "{subquery}"
 Historical memory context:
 {memory_hint}
 
+Learning guidance from prior marketplace scores:
+{learning_hint}
+
 Based on the facts above, provide:
 1. A short answer to the query
 2. A step-by-step reasoning process leading to the answer
@@ -60,8 +70,8 @@ Sources:
 """
 
         response = openai.ChatCompletion.create(
-            model="gpt-4",
-            messages=[{"role": "user", "content": prompt}]
+            model=default_chat_model(),
+            messages=[{"role": "user", "content": prompt}],
         )
 
         content = response["choices"][0]["message"]["content"]

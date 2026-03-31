@@ -53,6 +53,12 @@ VN_REGISTRY = {
         "requires_openai": True,
         "requires_kg": True,
     },
+    "alignment": {
+        "module": "validation_nodes.alignment_vn",
+        "function": "run_alignment_vn_from_dict",
+        "requires_openai": True,
+        "requires_kg": False,
+    },
 }
 
 
@@ -166,6 +172,7 @@ def _run_validations_for_output(
     output: Dict[str, Any],
     knowledge_graph: Any,
     openai_key: Optional[str],
+    alignment_profile: Optional[Dict[str, Any]],
 ) -> Dict[str, Dict[str, Any]]:
     metrics: Dict[str, Dict[str, Any]] = {}
     for vn_name, vn_info in VN_REGISTRY.items():
@@ -180,12 +187,15 @@ def _run_validations_for_output(
         try:
             vn_module = importlib.import_module(vn_info["module"])
             vn_function = getattr(vn_module, vn_info["function"])
-            args = [output]
-            if vn_info.get("requires_kg"):
-                args.append(knowledge_graph)
-            if vn_info.get("requires_openai"):
-                args.append(openai_key)
-            metrics[vn_name] = vn_function(*args)
+            if vn_name == "alignment":
+                metrics[vn_name] = vn_function(output, openai_key, alignment_profile)
+            else:
+                args = [output]
+                if vn_info.get("requires_kg"):
+                    args.append(knowledge_graph)
+                if vn_info.get("requires_openai"):
+                    args.append(openai_key)
+                metrics[vn_name] = vn_function(*args)
         except Exception as exc:
             metrics[vn_name] = {
                 "vn_type": vn_name,
@@ -197,24 +207,31 @@ def _run_validations_for_output(
 
 
 def validate_all(
-    results: List[Dict[str, Any]], knowledge_graph: Any, openai_key: Optional[str]
+    results: List[Dict[str, Any]],
+    knowledge_graph: Any,
+    openai_key: Optional[str],
+    alignment_profile: Optional[Dict[str, Any]] = None,
 ) -> List[Dict[str, Any]]:
     scored: List[Dict[str, Any]] = []
     for item in results:
         output = item["output"]
-        validation_metrics = _run_validations_for_output(output, knowledge_graph, openai_key)
+        validation_metrics = _run_validations_for_output(
+            output, knowledge_graph, openai_key, alignment_profile
+        )
         metric_scores = {
             "logical_consistency": validation_metrics.get("logical", {}).get("score", 0.0),
             "grounding": validation_metrics.get("grounding", {}).get("score", 0.0),
             "novelty": validation_metrics.get("novelty", {}).get("score", 0.0),
+            "alignment": validation_metrics.get("alignment", {}).get("score", 0.0),
         }
         final_score = round(
             (
                 metric_scores["logical_consistency"]
                 + metric_scores["grounding"]
                 + metric_scores["novelty"]
+                + metric_scores["alignment"]
             )
-            / 3.0,
+            / 4.0,
             4,
         )
         scored.append(
@@ -233,7 +250,11 @@ def _load_memory_for_agent(agent_name: str, registry: Dict[str, str]) -> Tuple[A
     last_cid = registry.get(agent_name)
     if not last_cid:
         return AgentMemory(agent_name=agent_name), None
-    memory_payload = fetch_json_from_ipfs(last_cid)
+    try:
+        memory_payload = fetch_json_from_ipfs(last_cid)
+    except Exception:
+        # Stale CID, gateway unreachable, or fake-IPFS mode without this blob — start fresh for this agent.
+        return AgentMemory(agent_name=agent_name), None
     return (
         AgentMemory(
             agent_name=memory_payload.get("agent_name", agent_name),
@@ -277,7 +298,7 @@ def orchestrate(
             raise ValueError("No reasoning modules available to run")
 
         scored_results = (
-            validate_all(module_results, knowledge_graph, openai_key)
+            validate_all(module_results, knowledge_graph, openai_key, alignment_profile)
             if run_validation
             else [
                 {
@@ -321,6 +342,21 @@ def orchestrate(
             updated_memory_cids[agent_name] = memory_cid
         _save_memory_registry(memory_registry)
 
+        registry_checkpoint_cid: Optional[str] = None
+        try:
+            with open(MEMORY_REGISTRY_PATH, "r", encoding="utf-8") as reg_fp:
+                registry_snapshot = json.load(reg_fp)
+            registry_checkpoint_cid = upload_to_ipfs(
+                {
+                    "type": "agent_memory_registry_checkpoint",
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                    "agents": registry_snapshot,
+                    "last_reasoning_round_cid": round_cid,
+                }
+            )
+        except OSError:
+            pass
+
         return {
             "reasoning": winner_entry["output"],
             "validation": winner_entry["validation"],
@@ -331,6 +367,7 @@ def orchestrate(
             "reasoning_round_cid": round_cid,
             "reasoning_round_filecoin": round_filecoin,
             "agent_memory_cids": updated_memory_cids,
+            "agent_memory_registry_cid": registry_checkpoint_cid,
             "round": round_payload,
         }
     except Exception as exc:

@@ -1,5 +1,11 @@
+import os
+import sys
+
 import openai
 from typing import Dict, Any, Optional
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+from core.openai_model import default_chat_model
 
 # === Optional: Story Protocol Integration ===
 def register_logic_to_story(reasoning_output: Dict[str, Any]) -> Dict[str, str]:
@@ -70,8 +76,8 @@ Feedback: <brief explanation>
     # Call OpenAI API
     try:
         response = openai.ChatCompletion.create(
-            model="gpt-4",
-            messages=[{"role": "user", "content": prompt}]
+            model=default_chat_model(),
+            messages=[{"role": "user", "content": prompt}],
         )
         content = response["choices"][0]["message"]["content"]
     except Exception as e:

@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import List, Tuple, Dict, Any, Optional
 
 from core.knowledge_graph.knowledgeGraph import KnowledgeGraph
+from core.openai_model import default_chat_model
 
 def extract_triples_from_text(text: str, openai_key: str, 
                              doc_metadata: Optional[Dict[str, Any]] = None) -> List[Tuple[str, str, str]]:
@@ -41,7 +42,7 @@ Only output valid Python list syntax. No explanations.
 
     try:
         response = openai.ChatCompletion.create(
-            model="gpt-4",
+            model=default_chat_model(),
             messages=[
                 {"role": "system", "content": "You extract structured triples from text."},
                 {"role": "user", "content": prompt}
