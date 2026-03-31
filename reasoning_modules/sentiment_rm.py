@@ -1,6 +1,7 @@
 import datetime
 
 from reasoning_modules.base.module import ReasoningModule
+from reasoning_modules.kg_triple_strings import module_scoped_triples
 from reasoning_modules.memory_hints import memory_learning_hint
 
 
@@ -51,6 +52,15 @@ class SentimentReasoningModule(ReasoningModule):
         if numeric_scores and sum(1 for s in numeric_scores[-5:] if s < 0.35) >= 2:
             conclusion += " (agent memory: past rounds scored low—stress data limitations and avoid overreading tone)."
 
+        source_triples = module_scoped_triples(
+            knowledgeGraph,
+            "sentiment",
+            [
+                {"subject": "TokenX"},
+                {"predicate": "has_sentiment"},
+            ],
+        )
+
         # Return structured output with reasoning path and sources
         return {
             "subquery": subquery,
@@ -70,4 +80,5 @@ class SentimentReasoningModule(ReasoningModule):
                 "past_round_count": len(memory_context.get("past_round_cids", [])),
                 "recent_performance_points": len(numeric_scores),
             },
+            "source_triples": source_triples,
         }
