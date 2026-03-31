@@ -17,7 +17,7 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
+# Note: do not ignore project-root `lib/` — Next.js uses `lib/utils.ts` (cn helper).
 lib64/
 parts/
 sdist/
@@ -83,6 +83,9 @@ pip-delete-this-directory.txt
 # TypeScript
 *.tsbuildinfo
 next-env.d.ts
+
+# Runtime / local agent registry (created by orchestrator)
+output/agent_memory_registry.json
 
 # Misc
 .DS_Store
