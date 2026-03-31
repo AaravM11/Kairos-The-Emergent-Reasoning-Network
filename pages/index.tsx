@@ -18,7 +18,7 @@ export default function Home() {
 
       <footer className="bg-gray-900 text-gray-400 py-8">
         <div className="container mx-auto px-4 text-center">
-          <p>© 2025 Kairos. Built by FranklinDAO.</p>
+          <p>© 2026 Kairos. Built by FranklinDAO.</p>
         </div>
       </footer>
     </>
