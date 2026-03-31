@@ -1,6 +1,7 @@
 import datetime
 
 from reasoning_modules.base.module import ReasoningModule
+from reasoning_modules.kg_triple_strings import module_scoped_triples
 from reasoning_modules.memory_hints import memory_learning_hint
 
 
@@ -49,6 +50,15 @@ class AuditReasoningModule(ReasoningModule):
         if numeric_scores and sum(1 for s in numeric_scores[-5:] if s < 0.35) >= 2:
             conclusion += " (elevated caution: recent validator scores for this agent were weak—double-check assumptions)."
 
+        source_triples = module_scoped_triples(
+            knowledgeGraph,
+            "audit",
+            [
+                {"subject": "TokenX", "subject_type": "SmartContract"},
+                {"predicate": "has_vulnerability"},
+            ],
+        )
+
         return {
             "subquery": subquery,
             "timestamp": datetime.datetime.now().isoformat(),
@@ -67,4 +77,5 @@ class AuditReasoningModule(ReasoningModule):
                 "past_round_count": len(memory_context.get("past_round_cids", [])),
                 "recent_performance_points": len(numeric_scores),
             },
+            "source_triples": source_triples,
         }
