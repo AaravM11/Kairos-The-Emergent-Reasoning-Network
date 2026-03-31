@@ -10,9 +10,12 @@ class AuditReasoningModule(ReasoningModule):
             "security_practices": "Protocol Security Standards"
         }
 
-    def run(self, subquery, knowledgeGraph):
+    def run(self, subquery, knowledgeGraph, memory_context=None):
         audit_facts = knowledgeGraph.query(subject="TokenX", subject_type="SmartContract")
         vulnerability_data = knowledgeGraph.query(predicate="has_vulnerability")
+        memory_context = memory_context or {}
+        previous_scores = memory_context.get("performance_history", [])
+        avg_score = sum(previous_scores) / len(previous_scores) if previous_scores else 0.0
         
         reasoning_steps = [
             {
@@ -45,6 +48,11 @@ class AuditReasoningModule(ReasoningModule):
             "relevantMetrics": {
                 "last_audit_age": "24 months",
                 "similar_exploits": "3 in last 6 months",
-                "security_score": "low"
-            }
+                "security_score": "low",
+                "memory_avg_score": round(avg_score, 4),
+            },
+            "memory_context_used": {
+                "past_round_count": len(memory_context.get("past_round_cids", [])),
+                "recent_performance_points": len(previous_scores),
+            },
         }

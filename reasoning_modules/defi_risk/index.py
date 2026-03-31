@@ -14,9 +14,16 @@ class DeFiRiskReasoningModule(ReasoningModule):
             "security_data": "Smart Contract Security Monitor"
         }
 
-    def run(self, subquery, knowledgeGraph, openai_key=None):
+    def run(self, subquery, knowledgeGraph, openai_key=None, memory_context=None):
         if not openai_key:
             raise ValueError("OpenAI API key is required for DeFi risk analysis")
+        memory_context = memory_context or {}
+        past_scores = memory_context.get("performance_history", [])
+        memory_hint = (
+            f"Past performance average: {round(sum(past_scores)/len(past_scores), 4)}"
+            if past_scores
+            else "No historical performance yet"
+        )
         
         openai.api_key = openai_key
 
@@ -33,6 +40,9 @@ You are a DeFi risk analysis agent. You are given the following structured facts
 {triples_text}
 
 User query: "{subquery}"
+
+Historical memory context:
+{memory_hint}
 
 Based on the facts above, provide:
 1. A short answer to the query
@@ -88,7 +98,11 @@ Sources:
                 "relevantMetrics": {
                     "source_count": len(source_triples),
                     "reasoning_steps": len(reasoning_steps)
-                }
+                },
+                "memory_context_used": {
+                    "past_round_count": len(memory_context.get("past_round_cids", [])),
+                    "recent_performance_points": len(past_scores),
+                },
             }
             
         except Exception as e:

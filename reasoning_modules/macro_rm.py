@@ -10,10 +10,13 @@ class MacroReasoningModule(ReasoningModule):
             "inflation_reports": "Bureau of Labor Statistics"
         }
 
-    def run(self, subquery, knowledgeGraph):
+    def run(self, subquery, knowledgeGraph, memory_context=None):
         # Query relevant macro data from the knowledge graph
         macro_facts = knowledgeGraph.query(subject_type="EconomicIndicator")
         market_data = knowledgeGraph.query(subject_type="MarketIndicator")
+        memory_context = memory_context or {}
+        previous_scores = memory_context.get("performance_history", [])
+        avg_score = sum(previous_scores) / len(previous_scores) if previous_scores else 0.0
         
         # Structured reasoning process
         reasoning_steps = [
@@ -51,8 +54,13 @@ class MacroReasoningModule(ReasoningModule):
             "relevantMetrics": {
                 "interest_rate": "4.75%",
                 "inflation": "3.2%",
-                "market_volatility": "high"
-            }
+                "market_volatility": "high",
+                "memory_avg_score": round(avg_score, 4),
+            },
+            "memory_context_used": {
+                "past_round_count": len(memory_context.get("past_round_cids", [])),
+                "recent_performance_points": len(previous_scores),
+            },
         }
     
     def _synthesize_conclusion(self, reasoning_steps):

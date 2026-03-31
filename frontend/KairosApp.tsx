@@ -20,6 +20,17 @@ interface ValidationResult {
 interface ApiResponse {
   reasoning: ReasoningResult | null;
   validation: ValidationResult | null;
+  competition?: Array<{
+    module_name: string;
+    score: number;
+    metrics: Record<string, number>;
+    output: Record<string, any>;
+  }>;
+  winner?: string;
+  winner_answer?: string;
+  reasoning_round_cid?: string;
+  knowledge_graph_cid?: string;
+  agent_memory_cids?: Record<string, string>;
   swarm?: string[];
   error?: string;
 }
@@ -34,6 +45,7 @@ export default function KairosFrontend() {
   const [result, setResult] = useState<ApiResponse | null>(null);
   const [tab, setTab] = useState<string>("reasoning");
   const [loading, setLoading] = useState<boolean>(false);
+  const [openaiKey, setOpenaiKey] = useState<string>("");
 
   const handleQuery = async () => {
     setLoading(true);
@@ -41,7 +53,7 @@ export default function KairosFrontend() {
       const res = await fetch("/api/query", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query }),
+        body: JSON.stringify({ query, openai_key: openaiKey }),
       });
       const data: ApiResponse = await res.json();
       setResult(data);
@@ -113,6 +125,11 @@ export default function KairosFrontend() {
           onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setQuery(e.target.value)}
         />
         <div className="flex gap-4">
+          <Input
+            placeholder="OpenAI key (required for full scoring)"
+            value={openaiKey}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setOpenaiKey(e.target.value)}
+          />
           <Button onClick={handleQuery} disabled={loading}>
             <Sparkles className="mr-2 h-4 w-4" /> Generate
           </Button>
@@ -129,13 +146,36 @@ export default function KairosFrontend() {
       <Tabs value={tab} onValueChange={setTab} className="w-full">
         <TabsList>
           <TabsTrigger value="reasoning">Reasoning</TabsTrigger>
+          <TabsTrigger value="competition">Competition</TabsTrigger>
           <TabsTrigger value="validation">Validation</TabsTrigger>
           <TabsTrigger value="graph">Reasoning Pathway</TabsTrigger>
           <TabsTrigger value="swarm">Swarm Stats</TabsTrigger>
         </TabsList>
 
         <TabsContent value="reasoning">
-          <Card><CardContent className="p-4 whitespace-pre-wrap text-sm">{JSON.stringify(result?.reasoning, null, 2)}</CardContent></Card>
+          <Card>
+            <CardContent className="p-4 whitespace-pre-wrap text-sm">
+              {JSON.stringify(
+                {
+                  winner: result?.winner,
+                  winner_answer: result?.winner_answer,
+                  reasoning_round_cid: result?.reasoning_round_cid,
+                  knowledge_graph_cid: result?.knowledge_graph_cid,
+                  reasoning: result?.reasoning,
+                },
+                null,
+                2
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="competition">
+          <Card>
+            <CardContent className="p-4 whitespace-pre-wrap text-sm">
+              {JSON.stringify(result?.competition, null, 2)}
+            </CardContent>
+          </Card>
         </TabsContent>
 
         <TabsContent value="validation">

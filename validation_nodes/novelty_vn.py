@@ -16,11 +16,13 @@ def run_novelty_vn(reasoning_output, kg, openai_key, story_threshold=0.85):
 
     # --- Step 1: Extract KG facts as text
     kg_text = "\n".join(
-        f"{s.label} --{r.predicate}--> {o.label}" for s, r, o in kg.relations
+        f"{kg.entities[r.subject_id].label} --{r.predicate}--> {kg.entities[r.object_id].label}"
+        for r in kg.relations
     )
 
     # --- Step 2: Get reasoning steps
-    reasoning = "\n".join(f"- {step}" for step in reasoning_output["reasoning_steps"])
+    reasoning_steps = reasoning_output.get("reasoning_steps", [])
+    reasoning = "\n".join(f"- {step}" for step in reasoning_steps)
 
     prompt = f"""
 You are a novelty evaluator for AI reasoning.

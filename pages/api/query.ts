@@ -1,58 +1,60 @@
-import type { NextApiRequest, NextApiResponse } from 'next';
+import type { NextApiRequest, NextApiResponse } from "next";
+import { spawn } from "child_process";
 
-// Mock response data
-const mockResponse = {
-  reasoning: {
-    module_used: "defi_risk",
-    conclusion: "The DeFi protocol shows moderate risk due to centralization concerns and limited audit history.",
-    reasoningPath: [
-      { 
-        step: "Liquidity Analysis", 
-        data: "Protocol has $25M TVL across 3 pools", 
-        inference: "Moderate liquidity, not enough to absorb large market movements" 
-      },
-      { 
-        step: "Smart Contract Risk", 
-        data: "One audit by CertiK completed in 2022", 
-        inference: "Limited audit history increases technical risk" 
-      },
-      { 
-        step: "Centralization Analysis", 
-        data: "3 admin keys with multisig (2/3)", 
-        inference: "Some centralization risk exists" 
-      }
-    ]
-  },
-  validation: {
-    logical: {
-      valid: true,
-      score: 0.92,
-      feedback: "Reasoning follows logical structure and conclusions are supported by evidence."
-    },
-    grounding: {
-      valid: true,
-      score: 0.85,
-      feedback: "All claims are grounded in verifiable data from the knowledge graph."
-    },
-    novelty: {
-      valid: true,
-      score: 0.78,
-      feedback: "Analysis provides some novel insights about centralization risks."
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  if (req.method !== "POST") {
+    res.setHeader("Allow", ["POST"]);
+    return res.status(405).end(`Method ${req.method} Not Allowed`);
+  }
+
+  const { query, openai_key, alignment_profile } = req.body || {};
+  if (!query) {
+    return res.status(400).json({ error: "Missing required query" });
+  }
+
+  try {
+    const payload = JSON.stringify({
+      query,
+      openai_key: openai_key || process.env.OPENAI_API_KEY,
+      alignment_profile,
+      run_validation: true,
+      kg_path: "output/knowledge_graph.json",
+    });
+    const result = await runMarketplaceRound(payload);
+    if (result.error) {
+      return res.status(500).json(result);
     }
+    return res.status(200).json(result);
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || "Marketplace run failed" });
   }
-};
+}
 
-export default function handler(
-  req: NextApiRequest,
-  res: NextApiResponse
-) {
-  if (req.method === 'POST') {
-    // Simulate processing delay
-    setTimeout(() => {
-      res.status(200).json(mockResponse);
-    }, 1500);
-  } else {
-    res.setHeader('Allow', ['POST']);
-    res.status(405).end(`Method ${req.method} Not Allowed`);
-  }
+function runMarketplaceRound(payload: string): Promise<any> {
+  return new Promise((resolve, reject) => {
+    const proc = spawn("python3", ["scripts/run_marketplace_round.py"]);
+    let stdout = "";
+    let stderr = "";
+
+    proc.stdout.on("data", (chunk) => {
+      stdout += chunk.toString();
+    });
+    proc.stderr.on("data", (chunk) => {
+      stderr += chunk.toString();
+    });
+    proc.on("error", reject);
+    proc.on("close", (code) => {
+      if (code !== 0) {
+        return reject(new Error(stderr || `Process exited with code ${code}`));
+      }
+      try {
+        resolve(JSON.parse(stdout));
+      } catch {
+        reject(new Error("Invalid JSON returned by Python marketplace runner"));
+      }
+    });
+
+    proc.stdin.write(payload);
+    proc.stdin.end();
+  });
 }

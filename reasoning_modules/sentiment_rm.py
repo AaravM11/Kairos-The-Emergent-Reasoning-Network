@@ -10,10 +10,13 @@ class SentimentReasoningModule(ReasoningModule):
             "community_metrics": "DeFi Community Engagement Tracker"
         }
 
-    def run(self, subquery, knowledgeGraph):
+    def run(self, subquery, knowledgeGraph, memory_context=None):
         # Use the correct query method instead of queryGraph
         token_data = knowledgeGraph.query(subject="TokenX")
         social_data = knowledgeGraph.query(predicate="has_sentiment")
+        memory_context = memory_context or {}
+        previous_scores = memory_context.get("performance_history", [])
+        avg_score = sum(previous_scores) / len(previous_scores) if previous_scores else 0.0
         
         # Structured reasoning process
         reasoning_steps = [
@@ -48,6 +51,11 @@ class SentimentReasoningModule(ReasoningModule):
             "relevantMetrics": {
                 "twitter_sentiment": "-0.65",
                 "reddit_sentiment": "-0.48",
-                "engagement_change": "-22% MoM"
-            }
+                "engagement_change": "-22% MoM",
+                "memory_avg_score": round(avg_score, 4),
+            },
+            "memory_context_used": {
+                "past_round_count": len(memory_context.get("past_round_cids", [])),
+                "recent_performance_points": len(previous_scores),
+            },
         }
