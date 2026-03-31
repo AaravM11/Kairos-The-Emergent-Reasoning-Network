@@ -1,9 +1,9 @@
-import openai
 import datetime
-import sys
 import os
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
-from core.openai_model import default_chat_model
+import sys
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../")))
+from core.llm_client import chat_completion, llm_ready
 from reasoning_modules.base.module import ReasoningModule
 from reasoning_modules.memory_hints import memory_learning_hint
 
@@ -18,8 +18,10 @@ class DeFiRiskReasoningModule(ReasoningModule):
         }
 
     def run(self, subquery, knowledgeGraph, openai_key=None, memory_context=None):
-        if not openai_key:
-            raise ValueError("OpenAI API key is required for DeFi risk analysis")
+        if not llm_ready(openai_key):
+            raise ValueError(
+                "LLM not configured: set OPENAI_API_KEY, or LLM_PROVIDER=ollama with Ollama running."
+            )
         memory_context = memory_context or {}
         past_scores = memory_context.get("performance_history", [])
         if not isinstance(past_scores, list):
@@ -31,8 +33,6 @@ class DeFiRiskReasoningModule(ReasoningModule):
             else "No historical performance yet"
         )
         learning_hint = memory_learning_hint(numeric_scores)
-
-        openai.api_key = openai_key
 
         # Extract relevant triples from the KG
         relevant_triples = knowledgeGraph.query(subject=None, predicate=None, object_=None)
@@ -69,12 +69,10 @@ Sources:
 - <subject> --<predicate>--> <object>
 """
 
-        response = openai.ChatCompletion.create(
-            model=default_chat_model(),
-            messages=[{"role": "user", "content": prompt}],
+        content = chat_completion(
+            [{"role": "user", "content": prompt}],
+            openai_key=openai_key,
         )
-
-        content = response["choices"][0]["message"]["content"]
 
         # Parse output
         try:
@@ -111,7 +109,7 @@ Sources:
                 },
                 "memory_context_used": {
                     "past_round_count": len(memory_context.get("past_round_cids", [])),
-                    "recent_performance_points": len(past_scores),
+                    "recent_performance_points": len(numeric_scores),
                 },
             }
             
