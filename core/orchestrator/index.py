@@ -8,6 +8,7 @@ from typing import Dict, Any, List, Optional, Tuple
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
+from core.llm_client import llm_ready
 from core.storage.ipfs import upload_to_ipfs, fetch_json_from_ipfs, persist_cid_to_filecoin
 
 
@@ -176,12 +177,12 @@ def _run_validations_for_output(
 ) -> Dict[str, Dict[str, Any]]:
     metrics: Dict[str, Dict[str, Any]] = {}
     for vn_name, vn_info in VN_REGISTRY.items():
-        if vn_info.get("requires_openai") and not openai_key:
+        if vn_info.get("requires_openai") and not llm_ready(openai_key):
             metrics[vn_name] = {
                 "vn_type": vn_name,
                 "valid": False,
                 "score": 0.0,
-                "feedback": "Skipped: OPENAI key not provided",
+                "feedback": "Skipped: set OPENAI_API_KEY or LLM_PROVIDER=ollama with Ollama running.",
             }
             continue
         try:
@@ -224,16 +225,22 @@ def validate_all(
             "novelty": validation_metrics.get("novelty", {}).get("score", 0.0),
             "alignment": validation_metrics.get("alignment", {}).get("score", 0.0),
         }
-        final_score = round(
-            (
-                metric_scores["logical_consistency"]
-                + metric_scores["grounding"]
-                + metric_scores["novelty"]
-                + metric_scores["alignment"]
-            )
-            / 4.0,
-            4,
-        )
+        validator_avg = (
+            metric_scores["logical_consistency"]
+            + metric_scores["grounding"]
+            + metric_scores["novelty"]
+            + metric_scores["alignment"]
+        ) / 4.0
+        raw_conf = output.get("confidence", 0.5)
+        try:
+            module_confidence = float(raw_conf)
+        except (TypeError, ValueError):
+            module_confidence = 0.5
+        module_confidence = max(0.0, min(1.0, module_confidence))
+        metric_scores["validator_average"] = round(validator_avg, 4)
+        metric_scores["module_confidence"] = round(module_confidence, 4)
+        # Blend so leaderboard differentiates when validators tie (e.g. LLM parse failures).
+        final_score = round(validator_avg * 0.72 + module_confidence * 0.28, 4)
         scored.append(
             {
                 "module_name": item["module_name"],
@@ -280,7 +287,7 @@ def orchestrate(
         module_results: List[Dict[str, Any]] = []
         loaded_memory_cids: Dict[str, Optional[str]] = {}
         for module_name, rm_info in RM_REGISTRY.items():
-            if rm_info.get("requires_openai", False) and not openai_key:
+            if rm_info.get("requires_openai", False) and not llm_ready(openai_key):
                 continue
             agent_memory, memory_cid = _load_memory_for_agent(module_name, memory_registry)
             loaded_memory_cids[module_name] = memory_cid
