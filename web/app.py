@@ -6,6 +6,7 @@ import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from core.knowledge_graph.knowledgeGraph import KnowledgeGraph
+from core.llm_client import llm_ready
 from core.orchestrator.index import orchestrate
 
 app = Flask(__name__)
@@ -27,8 +28,10 @@ def process_query():
     if not query:
         return jsonify({"error": "No query provided"}), 400
     
-    if not openai_key:
-        return jsonify({"error": "OpenAI API key required"}), 400
+    if not llm_ready(openai_key):
+        return jsonify(
+            {"error": "Set OPENAI_API_KEY or LLM_PROVIDER=ollama with Ollama running."}
+        ), 400
     
     result = orchestrate(
         query=query,
