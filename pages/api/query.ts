@@ -7,6 +7,52 @@ function pythonExecutable(): string {
   return process.env.KAIROS_PYTHON || process.env.PYTHON_PATH || "python3";
 }
 
+/**
+ * Python may print warnings / logs to stdout before the final JSON line.
+ * Prefer the last parseable JSON object in the buffer.
+ */
+function parsePythonStdoutJson(raw: string): Record<string, unknown> | null {
+  const t = raw.trim();
+  if (!t) return null;
+  const tryParse = (s: string): Record<string, unknown> | null => {
+    try {
+      const v = JSON.parse(s) as unknown;
+      if (v !== null && typeof v === "object" && !Array.isArray(v)) {
+        return v as Record<string, unknown>;
+      }
+    } catch {
+      /* ignore */
+    }
+    return null;
+  };
+  const direct = tryParse(t);
+  if (direct) return direct;
+  const lines = t.split(/\n/);
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i].trim();
+    if (!line.startsWith("{")) continue;
+    const fromLine = tryParse(line);
+    if (fromLine) return fromLine;
+  }
+  const lastOpen = t.lastIndexOf("{");
+  if (lastOpen >= 0) {
+    let depth = 0;
+    for (let i = lastOpen; i < t.length; i++) {
+      const c = t[i];
+      if (c === "{") depth++;
+      else if (c === "}") {
+        depth--;
+        if (depth === 0) {
+          const slice = tryParse(t.slice(lastOpen, i + 1));
+          if (slice) return slice;
+          break;
+        }
+      }
+    }
+  }
+  return null;
+}
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") {
     res.setHeader("Allow", ["POST"]);
@@ -53,25 +99,28 @@ function runMarketplaceRound(payload: string): Promise<any> {
     });
     proc.on("error", reject);
     proc.on("close", (code) => {
-      const trimmed = stdout.trim();
-      let parsed: unknown = null;
-      if (trimmed) {
-        try {
-          parsed = JSON.parse(trimmed);
-        } catch {
-          /* ignore */
-        }
-      }
-      // Python prints JSON to stdout even on sys.exit(1) (e.g. uncaught exception in main).
-      if (parsed !== null && typeof parsed === "object") {
-        resolve(parsed as Record<string, unknown>);
+      const parsed = parsePythonStdoutJson(stdout);
+      if (parsed !== null) {
+        resolve(parsed);
         return;
       }
+      const headOut = stdout.trim().slice(0, 800);
+      const headErr = stderr.trim().slice(0, 800);
       if (code !== 0) {
-        reject(new Error(stderr.trim() || trimmed || `Python exited with code ${code}`));
+        reject(
+          new Error(
+            headErr ||
+              headOut ||
+              `Python exited with code ${code} (no JSON on stdout; check stderr above)`
+          )
+        );
         return;
       }
-      reject(new Error("Invalid JSON returned by Python marketplace runner"));
+      reject(
+        new Error(
+          `Invalid JSON from marketplace runner. stdout (first 800 chars): ${headOut || "(empty)"} stderr: ${headErr || "(empty)"}`
+        )
+      );
     });
 
     proc.stdin.write(payload);
