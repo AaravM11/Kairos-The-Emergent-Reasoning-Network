@@ -1,11 +1,10 @@
 import os
 import sys
-
-import openai
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from core.openai_model import default_chat_model
+from core.llm_client import chat_completion, llm_ready
+from validation_nodes.validator_llm_parse import parse_score_0_1, parse_bool_after_keyword, parse_feedback_after_keyword
 
 # === Optional: Story Protocol Integration ===
 def register_logic_to_story(reasoning_output: Dict[str, Any]) -> Dict[str, str]:
@@ -31,10 +30,8 @@ def run_logical_vn(reasoning_output: Dict[str, Any], openai_key: str,
     Returns:
         Validation result with validity score and feedback
     """
-    if not openai_key:
-        raise ValueError("OpenAI API key is required for logical validation")
-    
-    openai.api_key = openai_key
+    if not llm_ready(openai_key):
+        raise ValueError("Set OPENAI_API_KEY or LLM_PROVIDER=ollama with Ollama running.")
 
     # Extract reasoning steps and answer
     try:
@@ -73,35 +70,29 @@ Score: <0-1>
 Feedback: <brief explanation>
 """
 
-    # Call OpenAI API
     try:
-        response = openai.ChatCompletion.create(
-            model=default_chat_model(),
-            messages=[{"role": "user", "content": prompt}],
-        )
-        content = response["choices"][0]["message"]["content"]
+        content = chat_completion([{"role": "user", "content": prompt}], openai_key=openai_key)
     except Exception as e:
         return {
             "vn_type": "LogicalVN",
             "valid": False,
             "score": 0.0,
-            "feedback": f"OpenAI API error: {str(e)}",
+            "feedback": f"LLM error: {str(e)}",
             "story_protocol": None
         }
 
-    # Parse GPT Output
-    try:
-        valid = "true" in content.lower().split("valid:")[1].split("\n")[0].strip()
-        score = float(content.lower().split("score:")[1].split("\n")[0].strip())
-        feedback = content.split("Feedback:")[1].strip()
-    except Exception as e:
+    vb = parse_bool_after_keyword(content, "valid")
+    score = parse_score_0_1(content)
+    feedback = parse_feedback_after_keyword(content)
+    if score is None:
         return {
             "vn_type": "LogicalVN",
             "valid": False,
             "score": 0.0,
-            "feedback": f"Could not parse validator response: {str(e)}",
-            "story_protocol": None
+            "feedback": "Could not parse validator score from LLM output.",
+            "story_protocol": None,
         }
+    valid = vb if vb is not None else (score >= 0.7)
 
     result = {
         "vn_type": "LogicalVN",
