@@ -1,10 +1,9 @@
-import openai
 import ast
 from datetime import datetime
 from typing import List, Tuple, Dict, Any, Optional
 
 from core.knowledge_graph.knowledgeGraph import KnowledgeGraph
-from core.openai_model import default_chat_model
+from core.llm_client import chat_completion, llm_ready
 
 def extract_triples_from_text(text: str, openai_key: str, 
                              doc_metadata: Optional[Dict[str, Any]] = None) -> List[Tuple[str, str, str]]:
@@ -19,8 +18,9 @@ def extract_triples_from_text(text: str, openai_key: str,
     Returns:
         List of (subject, predicate, object) tuples
     """
-    openai.api_key = openai_key
-    
+    if not llm_ready(openai_key):
+        raise ValueError("Set OPENAI_API_KEY or LLM_PROVIDER=ollama with Ollama running.")
+
     # Include document metadata in the prompt if available
     metadata_str = ""
     if doc_metadata:
@@ -41,15 +41,13 @@ Only output valid Python list syntax. No explanations.
 """
 
     try:
-        response = openai.ChatCompletion.create(
-            model=default_chat_model(),
-            messages=[
+        triples_text = chat_completion(
+            [
                 {"role": "system", "content": "You extract structured triples from text."},
-                {"role": "user", "content": prompt}
-            ]
-        )
-        
-        triples_text = response['choices'][0]['message']['content'].strip()
+                {"role": "user", "content": prompt},
+            ],
+            openai_key=openai_key,
+        ).strip()
         
         try:
             return ast.literal_eval(triples_text)
